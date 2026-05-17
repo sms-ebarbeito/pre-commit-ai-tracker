@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# pre-commit hook: shows an AI vs Human authorship bar for the staged diff.
+#
+# How it works:
+#   1. Read the staged diff (lines being committed right now)
+#   2. Read .claude/ai-changes.diff (accumulated Claude diffs captured by the Stop hook)
+#   3. For each added line in the staged diff, check if it appeared in Claude's diffs
+#   4. Render a progress bar + percentages
+
+set -euo pipefail
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+AI_DIFF_FILE="$REPO_ROOT/.claude/ai-changes.diff"
+
+# ── ANSI colors ───────────────────────────────────────────────────────────────
+RESET="\033[0m"
+BOLD="\033[1m"
+CYAN="\033[36m"
+YELLOW="\033[33m"
+GREEN="\033[32m"
+DIM="\033[2m"
+
+# ── Collect added lines from the staged diff ──────────────────────────────────
+# Only the content of lines being added (strip the leading '+', skip headers)
+STAGED_ADDED=$(git diff --cached --unified=0 \
+    | grep '^+' \
+    | grep -v '^+++' \
+    | sed 's/^+//')
+
+TOTAL_LINES=$(echo "$STAGED_ADDED" | grep -c '' || true)
+
+if [ "$TOTAL_LINES" -eq 0 ]; then
+    # Nothing added — only deletions or whitespace, skip the bar
+    exit 0
+fi
+
+# ── Collect all lines Claude ever wrote (from the tracking file) ──────────────
+if [ ! -f "$AI_DIFF_FILE" ]; then
+    AI_LINES=""
+else
+    AI_LINES=$(grep '^+' "$AI_DIFF_FILE" \
+        | grep -v '^+++' \
+        | sed 's/^+//' \
+        | sort -u)
+fi
+
+# ── Count how many staged added-lines appear in Claude's accumulated diff ─────
+AI_COUNT=0
+HUMAN_COUNT=0
+
+while IFS= read -r line; do
+    # Skip blank lines from the count to avoid noise
+    if [ -z "${line// }" ]; then
+        ((TOTAL_LINES--)) || true
+        continue
+    fi
+
+    if echo "$AI_LINES" | grep -qxF "$line" 2>/dev/null; then
+        ((AI_COUNT++)) || true
+    else
+        ((HUMAN_COUNT++)) || true
+    fi
+done <<< "$STAGED_ADDED"
+
+# Re-calculate total in case blank lines were excluded
+TOTAL_LINES=$((AI_COUNT + HUMAN_COUNT))
+
+if [ "$TOTAL_LINES" -eq 0 ]; then
+    exit 0
+fi
+
+# ── Calculate percentages ─────────────────────────────────────────────────────
+AI_PCT=$(( (AI_COUNT * 100) / TOTAL_LINES ))
+HUMAN_PCT=$(( 100 - AI_PCT ))
+
+# ── Render the bar (40 chars wide) ───────────────────────────────────────────
+BAR_WIDTH=40
+AI_FILLED=$(( (AI_PCT * BAR_WIDTH) / 100 ))
+HUMAN_FILLED=$(( BAR_WIDTH - AI_FILLED ))
+
+AI_BAR=$(printf '%0.s█' $(seq 1 $AI_FILLED) 2>/dev/null || printf '%.0s#' $(seq 1 $AI_FILLED))
+HUMAN_BAR=$(printf '%0.s░' $(seq 1 $HUMAN_FILLED) 2>/dev/null || printf '%.0s-' $(seq 1 $HUMAN_FILLED))
+
+echo ""
+echo -e " ${BOLD}Authorship of this commit${RESET}  (${DIM}${TOTAL_LINES} non-blank lines added${RESET})"
+echo -e " ${CYAN}AI${RESET}    ${CYAN}${AI_BAR}${RESET}${DIM}${HUMAN_BAR}${RESET}  ${BOLD}${CYAN}${AI_PCT}%${RESET}"
+echo -e " ${YELLOW}Human${RESET} ${DIM}${HUMAN_BAR//?/░}${RESET}${YELLOW}$(printf '%0.s█' $(seq 1 $HUMAN_FILLED) 2>/dev/null)${RESET}  ${BOLD}${YELLOW}${HUMAN_PCT}%${RESET}"
+echo ""
+
+# ── Archive the used diff so it doesn't bleed into the next commit ────────────
+if [ -f "$AI_DIFF_FILE" ]; then
+    ARCHIVE="$REPO_ROOT/.claude/ai-changes-$(date -u +%Y%m%dT%H%M%S).diff.bak"
+    mv "$AI_DIFF_FILE" "$ARCHIVE"
+fi
+
+exit 0
