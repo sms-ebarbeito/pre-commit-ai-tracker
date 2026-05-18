@@ -61,9 +61,11 @@ cd ~/tools/pre-commit-ai-tracker
 
 What it does:
 - Copies `capture-ai-diff.sh` → `~/.claude/scripts/`
-- Copies hooks → `~/.git-hooks/` (`pre-commit`, `prepare-commit-msg`, `post-commit`)
+- Symlinks hooks → `~/.git-hooks/` (`pre-commit`, `prepare-commit-msg`, `post-commit`)
 - Sets `git config --global core.hooksPath ~/.git-hooks`
 - Adds the Stop hook to `~/.claude/settings.json`
+
+> Hooks are installed as symlinks to the cloned repo, so any update (`git pull`) takes effect immediately — no reinstall needed.
 
 > If `~/.claude/settings.json` already exists (common if you use Claude Code), the installer will print the entry to add manually — it won't overwrite your existing config.
 
@@ -202,13 +204,13 @@ AI    ███████████████████████░�
     └── post-commit                 # Archives diff, cleans up temp files
 ```
 
-After installation, these live globally at:
+After installation, the capture script is copied and the hooks are symlinked:
 
 ```
-~/.claude/scripts/capture-ai-diff.sh
-~/.git-hooks/pre-commit
-~/.git-hooks/prepare-commit-msg
-~/.git-hooks/post-commit
+~/.claude/scripts/capture-ai-diff.sh        # copy
+~/.git-hooks/pre-commit          -> <repo>/hooks/pre-commit
+~/.git-hooks/prepare-commit-msg  -> <repo>/hooks/prepare-commit-msg
+~/.git-hooks/post-commit         -> <repo>/hooks/post-commit
 ```
 
 Per-repo tracking files (git-ignored automatically):
