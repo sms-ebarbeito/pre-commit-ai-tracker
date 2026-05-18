@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Global post-commit hook: archives the AI diff and cleans up temp files.
+
+set -euo pipefail
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+AI_DIFF_FILE="$REPO_ROOT/.claude/ai-changes.diff"
+STATS_FILE="$REPO_ROOT/.claude/ai-stats.tmp"
+
+if [ -f "$AI_DIFF_FILE" ]; then
+    mv "$AI_DIFF_FILE" "$REPO_ROOT/.claude/ai-changes-$(date -u +%Y%m%dT%H%M%S).diff.bak"
+fi
+
+rm -f "$STATS_FILE"
+
+# Chain to project-level post-commit if it exists
+PROJECT_HOOK="$REPO_ROOT/.git/hooks/post-commit"
+if [ -x "$PROJECT_HOOK" ]; then
+    exec "$PROJECT_HOOK" "$@"
+fi
+
+exit 0

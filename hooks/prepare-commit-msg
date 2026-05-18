@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Global prepare-commit-msg hook: appends AI vs Human stats to the commit message.
+# Only runs if pre-commit saved a .claude/ai-stats.tmp file.
+
+COMMIT_MSG_FILE="$1"
+COMMIT_SOURCE="${2:-}"
+
+# Skip for merges, squashes, ammends — they already have a message
+[ "$COMMIT_SOURCE" = "merge" ] && exit 0
+[ "$COMMIT_SOURCE" = "squash" ] && exit 0
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+STATS_FILE="$REPO_ROOT/.claude/ai-stats.tmp"
+
+[ -f "$STATS_FILE" ] || exit 0
+
+# shellcheck source=/dev/null
+source "$STATS_FILE"
+
+# Append plain-text bar at the end of the commit message
+# "H" of Human aligns at visual pos 48 from "AI": "AI    "[6] + bar[40] + "  "[2] = 48
+PCT_LINE=$(printf "%-48s%s" "${AI_PCT}%" "${HUMAN_PCT}%")
+
+cat >> "$COMMIT_MSG_FILE" <<EOF
+
+
+─────────────────────────────────────────────
+Authorship ($TOTAL_LINES lines)
+AI    ${AI_BAR}${HUMAN_BAR}  Human
+${PCT_LINE}
+─────────────────────────────────────────────
+EOF
+
+exit 0

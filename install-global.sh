@@ -16,12 +16,14 @@ cp "$SCRIPT_DIR/scripts/capture-ai-diff.sh" "$CLAUDE_SCRIPTS/capture-ai-diff.sh"
 chmod +x "$CLAUDE_SCRIPTS/capture-ai-diff.sh"
 echo "✓ capture script  → $CLAUDE_SCRIPTS/capture-ai-diff.sh"
 
-# ── 2. Global git pre-commit hook ─────────────────────────────────────────────
+# ── 2. Global git hooks (symlinks so edits in the repo take effect immediately) ─
 mkdir -p "$GIT_HOOKS"
-cp "$SCRIPT_DIR/hooks/pre-commit" "$GIT_HOOKS/pre-commit"
-chmod +x "$GIT_HOOKS/pre-commit"
+for hook in pre-commit post-commit prepare-commit-msg; do
+    ln -sf "$SCRIPT_DIR/hooks/$hook" "$GIT_HOOKS/$hook"
+    chmod +x "$SCRIPT_DIR/hooks/$hook"
+    echo "✓ $hook → $GIT_HOOKS/$hook -> $SCRIPT_DIR/hooks/$hook"
+done
 git config --global core.hooksPath "$GIT_HOOKS"
-echo "✓ pre-commit hook → $GIT_HOOKS/pre-commit"
 echo "✓ git config        core.hooksPath = $GIT_HOOKS"
 
 # ── 3. Claude Code global Stop hook ──────────────────────────────────────────
