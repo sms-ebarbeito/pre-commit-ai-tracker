@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# Show the AI Authorship Log for a commit.
+# Usage: git-ai-show [<commit>]   (default: HEAD)
+#        git-ai-show --log [<n>]  (show last n commits with AI notes)
+
+set -euo pipefail
+
+RESET="\033[0m"
+BOLD="\033[1m"
+CYAN="\033[36m"
+DIM="\033[2m"
+YELLOW="\033[33m"
+GREEN="\033[32m"
+
+if [ "${1:-}" = "--log" ]; then
+    N="${2:-10}"
+    echo ""
+    git log --oneline -"$N" | while IFS= read -r entry; do
+        SHA="${entry%% *}"
+        MSG="${entry#* }"
+        NOTE=$(git notes --ref=refs/notes/ai show "$SHA" 2>/dev/null || true)
+        if [ -n "$NOTE" ]; then
+            AI_PCT=$(echo "$NOTE" | python3 -c "
+import sys, json
+text = sys.stdin.read()
+parts = text.split('---', 1)
+if len(parts) < 2:
+    print('?')
+    sys.exit()
+try:
+    meta = json.loads(parts[1])
+    total_accepted = sum(
+        p.get('accepted_lines', 0)
+        for p in meta.get('prompts', {}).values()
+    )
+    print(total_accepted)
+except:
+    print('?')
+" 2>/dev/null || echo "?")
+            printf " ${CYAN}${BOLD}%-8s${RESET} ${GREEN}[AI: %s lines]${RESET} %s\n" "$SHA" "$AI_PCT" "$MSG"
+        else
+            printf " ${DIM}%-8s${RESET} ${DIM}[no AI data]${RESET}  %s\n" "$SHA" "$MSG"
+        fi
+    done
+    echo ""
+    exit 0
+fi
+
+COMMIT="${1:-HEAD}"
+NOTE=$(git notes --ref=refs/notes/ai show "$COMMIT" 2>/dev/null || true)
+
+if [ -z "$NOTE" ]; then
+    echo "No AI authorship data for $COMMIT"
+    exit 0
+fi
+
+# Pretty-print the note
+python3 - "$COMMIT" <<'PYEOF'
+import sys, json, subprocess
+
+commit = sys.argv[1]
+
+note = subprocess.run(
+    ["git", "notes", "--ref=refs/notes/ai", "show", commit],
+    capture_output=True, text=True
+).stdout
+
+parts = note.split("---\n", 1)
+attestation = parts[0].strip()
+metadata = {}
+if len(parts) > 1:
+    try:
+        metadata = json.loads(parts[1])
+    except Exception:
+        pass
+
+# Commit info
+info = subprocess.run(
+    ["git", "log", "-1", "--format=%H %s %ae %ai", commit],
+    capture_output=True, text=True
+).stdout.strip().split(" ", 3)
+
+sha = info[0][:12] if info else commit
+subject = info[3] if len(info) > 3 else ""
+
+BOLD = "\033[1m"
+CYAN = "\033[36m"
+DIM  = "\033[2m"
+YEL  = "\033[33m"
+GRN  = "\033[32m"
+RST  = "\033[0m"
+
+print("")
+print(f" {BOLD}Commit{RST}  {sha}")
+if subject:
+    print(f" {DIM}{subject}{RST}")
+
+schema = metadata.get("schema_version", "")
+if schema:
+    print(f" {DIM}Schema: {schema}{RST}")
+
+print("")
+
+# Attestation
+if attestation:
+    print(f" {BOLD}Attestation{RST}")
+    current_file = None
+    for line in attestation.splitlines():
+        if line.startswith("  "):
+            parts_l = line.strip().split(" ", 1)
+            h = parts_l[0]
+            ranges = parts_l[1] if len(parts_l) > 1 else ""
+            # Count lines
+            total = 0
+            for r in ranges.split(","):
+                r = r.strip()
+                if "-" in r:
+                    a, b = r.split("-", 1)
+                    total += int(b) - int(a) + 1
+                elif r.isdigit():
+                    total += 1
+            print(f"   {CYAN}{h}{RST}  lines {ranges}  {DIM}({total} lines){RST}")
+        else:
+            print(f"   {BOLD}{line.strip('\"')}{RST}")
+    print("")
+
+# Sessions
+prompts = metadata.get("prompts", {})
+if prompts:
+    print(f" {BOLD}Sessions{RST}")
+    for h, p in prompts.items():
+        agent = p.get("agent_id", {})
+        tool  = agent.get("tool", "unknown")
+        model = agent.get("model", "unknown")
+        acc   = p.get("accepted_lines", 0)
+        human = p.get("human_author", "")
+        print(f"   {CYAN}{h}{RST}")
+        print(f"     tool:    {tool} / {model}")
+        print(f"     author:  {human}")
+        print(f"     lines:   {acc} accepted")
+    print("")
+
+PYEOF

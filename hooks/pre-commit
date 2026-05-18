@@ -1,91 +1,15 @@
 #!/usr/bin/env bash
-# Global pre-commit hook: AI vs Human authorship bar.
-# Computes stats, shows the colored bar in the terminal, and saves
-# plain-text stats to .claude/ai-stats.tmp for prepare-commit-msg.
+# Global pre-commit hook: builds the AI Authorship Log from Claude's edit checkpoints.
+# The log is saved to .git/ai/pending.log and attached as a Git Note by post-commit.
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+
+python3 "$SCRIPT_DIR/../scripts/build-authorship.py"
+
+# Chain to project-level pre-commit if it exists
 REPO_ROOT=$(git rev-parse --show-toplevel)
-AI_DIFF_FILE="$REPO_ROOT/.claude/ai-changes.diff"
-STATS_FILE="$REPO_ROOT/.claude/ai-stats.tmp"
-
-RESET="\033[0m"
-BOLD="\033[1m"
-CYAN="\033[36m"
-YELLOW="\033[33m"
-DIM="\033[2m"
-
-# ── Staged added lines ────────────────────────────────────────────────────────
-STAGED_ADDED=$(git diff --cached --unified=0 \
-    | grep '^+' \
-    | grep -v '^+++' \
-    | sed 's/^+//' || true)
-
-TOTAL_LINES=$(echo "$STAGED_ADDED" | grep -c . || true)
-
-if [ "$TOTAL_LINES" -eq 0 ]; then
-    exit 0
-fi
-
-# ── Claude's accumulated lines (deduplicated) ─────────────────────────────────
-if [ ! -f "$AI_DIFF_FILE" ]; then
-    AI_LINES=""
-else
-    AI_LINES=$(grep '^+' "$AI_DIFF_FILE" \
-        | grep -v '^+++' \
-        | sed 's/^+//' \
-        | sort -u || true)
-fi
-
-# ── Match staged lines against Claude's lines ─────────────────────────────────
-AI_COUNT=0
-HUMAN_COUNT=0
-
-while IFS= read -r line; do
-    [ -z "${line// }" ] && { ((TOTAL_LINES--)) || true; continue; }
-    if echo "$AI_LINES" | grep -qxF "$line" 2>/dev/null; then
-        ((AI_COUNT++)) || true
-    else
-        ((HUMAN_COUNT++)) || true
-    fi
-done <<< "$STAGED_ADDED"
-
-TOTAL_LINES=$((AI_COUNT + HUMAN_COUNT))
-[ "$TOTAL_LINES" -eq 0 ] && exit 0
-
-# ── Percentages ───────────────────────────────────────────────────────────────
-AI_PCT=$(( (AI_COUNT * 100) / TOTAL_LINES ))
-HUMAN_PCT=$(( 100 - AI_PCT ))
-
-# ── Bar chars ─────────────────────────────────────────────────────────────────
-BAR_WIDTH=40
-AI_FILLED=$(( (AI_PCT * BAR_WIDTH) / 100 ))
-HUMAN_FILLED=$(( BAR_WIDTH - AI_FILLED ))
-
-AI_BAR=$(python3 -c "print('█' * $AI_FILLED, end='')")
-HUMAN_BAR=$(python3 -c "print('░' * $HUMAN_FILLED, end='')")
-
-# ── Show colored bar in terminal ──────────────────────────────────────────────
-# Layout: " AI    [40 chars]  Human"
-#         " PCT_AI<padding>PCT_HUMAN"
-# "H" of Human starts at visual pos 49 (1 space + "AI    " 6 + bar 40 + "  " 2)
-echo ""
-echo -e " ${BOLD}Authorship${RESET}  (${DIM}${TOTAL_LINES} lines${RESET})"
-echo -e " ${CYAN}AI   ${RESET} ${CYAN}${AI_BAR}${RESET}${DIM}${HUMAN_BAR}${RESET}  ${YELLOW}Human${RESET}"
-printf " ${CYAN}${BOLD}%-48s${RESET}${YELLOW}${BOLD}%s${RESET}\n" "${AI_PCT}%" "${HUMAN_PCT}%"
-echo ""
-
-# ── Save plain-text stats for prepare-commit-msg ─────────────────────────────
-mkdir -p "$REPO_ROOT/.claude"
-cat > "$STATS_FILE" <<EOF
-AI_PCT=$AI_PCT
-HUMAN_PCT=$HUMAN_PCT
-TOTAL_LINES=$TOTAL_LINES
-AI_BAR=$AI_BAR
-HUMAN_BAR=$HUMAN_BAR
-EOF
-
-# ── Chain to project-level pre-commit if it exists ───────────────────────────
 PROJECT_HOOK="$REPO_ROOT/.git/hooks/pre-commit"
 if [ -x "$PROJECT_HOOK" ]; then
     exec "$PROJECT_HOOK" "$@"
