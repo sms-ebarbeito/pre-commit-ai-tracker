@@ -1,7 +1,8 @@
-# AI vs Human — pre-commit authorship tracker
+# AI Authorship Tracker
 
-Tracks how much of your committed code was written by AI (Claude) vs by you.
-Shows a live bar in the terminal on every `git commit`, and appends the stats permanently to the commit message.
+Tracks which lines in your commits were written by Claude Code, stored as **Git Notes** — clean history, zero telemetry, no external services.
+
+Inspired by the [git-ai standard v3](docs/git_ai_standard_v3.0.0.md), but implemented entirely in bash + python3 with no binaries to trust.
 
 Works **globally** — install once and every git repository on your machine gets it automatically.
 
@@ -10,34 +11,26 @@ Works **globally** — install once and every git repository on your machine get
 ## How it works
 
 ```
-Claude writes code (Edit / Write tools)
+Claude writes code (Edit / Write / MultiEdit tools)
       │
-      ▼  [PostToolUse hook fires after each Edit/Write]
-.claude/ai-changes.diff  ◄── Claude's diff is appended incrementally
-      │
-      │  [Stop hook also fires at end of turn — catches anything missed]
+      ▼  [PostToolUse hook fires after each edit]
+.git/ai/working/<session-hash>.json  ◄── line ranges recorded per file
       │
       ▼
 You review, then: git commit -m "..."
       │
       ├─ pre-commit hook
-      │    Compares staged diff vs .claude/ai-changes.diff
-      │    Lines that match → AI
-      │    Lines that don't → Human
-      │    Shows colored bar in terminal
-      │    Saves stats to .claude/ai-stats.tmp
-      │
-      ├─ prepare-commit-msg hook
-      │    Appends the bar (plain text) to your commit message
+      │    Reads checkpoints from .git/ai/working/
+      │    Cross-references with staged diff (line numbers, not content)
+      │    Prints summary to terminal
+      │    Saves Authorship Log to .git/ai/pending.log
       │
       └─ post-commit hook
-           Archives .claude/ai-changes.diff
-           Cleans up .claude/ai-stats.tmp
+           Attaches pending.log as Git Note → refs/notes/ai
+           Archives session checkpoints
 ```
 
-Two capture points ensure accurate tracking:
-- **PostToolUse** fires immediately after each `Edit` or `Write` tool call — so the diff is recorded even if you commit during the same Claude turn.
-- **Stop** fires at the end of every Claude turn as a fallback (catches files written via Bash, etc.).
+Line ranges are captured **at edit time** via `git diff`, not by comparing content at commit time — this avoids false attribution caused by special characters, whitespace, or repeated lines.
 
 ---
 
@@ -45,64 +38,44 @@ Two capture points ensure accurate tracking:
 
 - macOS / Linux
 - Git 2.9+
-- Python 3 (for Unicode block characters in the bar)
+- Python 3
 - [Claude Code](https://claude.ai/code) CLI
 
 ---
 
 ## Installation
 
-### Global (recommended) — works for every repo on your machine
-
 ```bash
-git clone <this-repo> ~/tools/pre-commit-ai-tracker
-cd ~/tools/pre-commit-ai-tracker
+git clone <this-repo> ~/tools/ai-authorship
+cd ~/tools/ai-authorship
 ./install-global.sh
 ```
 
 What it does:
-- Copies `capture-ai-diff.sh` → `~/.claude/scripts/`
-- Symlinks hooks → `~/.git-hooks/` (`pre-commit`, `prepare-commit-msg`, `post-commit`)
+- Copies scripts → `~/.claude/scripts/`
+- Copies `git-ai-show` → `~/.local/bin/`
+- Symlinks hooks → `~/.git-hooks/` (`pre-commit`, `post-commit`, `prepare-commit-msg`)
 - Sets `git config --global core.hooksPath ~/.git-hooks`
-- Adds the Stop hook to `~/.claude/settings.json`
+- Adds the `PostToolUse` hook to `~/.claude/settings.json`
 
-> Hooks are installed as symlinks to the cloned repo, so any update (`git pull`) takes effect immediately — no reinstall needed.
+> Hooks are symlinks to the cloned repo — a `git pull` updates them immediately with no reinstall.
 
-> If `~/.claude/settings.json` already exists (common if you use Claude Code), the installer will print the entry to add manually — it won't overwrite your existing config.
-
-### Per-project
-
-```bash
-./install.sh /path/to/your/project
-```
+> If `~/.claude/settings.json` already exists, the installer prints the entry to add manually.
 
 ---
 
-## Manual hook setup
-
-If you already have a `~/.claude/settings.json`, add both entries:
+## Manual settings.json entry
 
 ```json
 {
   "hooks": {
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /Users/YOU/.claude/scripts/capture-ai-diff.sh"
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "bash /Users/YOU/.claude/scripts/capture-ai-diff.sh"
+            "command": "bash ~/.claude/scripts/post-tool-use.sh"
           }
         ]
       }
@@ -115,80 +88,44 @@ If you already have a `~/.claude/settings.json`, add both entries:
 
 ## What you see
 
-### Terminal (colored)
-
-Every `git commit` prints a bar before the commit goes through:
+### At commit time
 
 ```
- Authorship  (120 lines)
- AI    ██████████████████████████████░░░░░░░░░░  Human
- 75%                                             25%
+ AI Authorship  94% AI · 6% Human  (234 lines staged)
+   src/auth/middleware.py  [1-180]  (180 lines)
+   tests/test_auth.py      [1-54]   (54 lines)
 ```
 
-### Commit message (plain text)
-
-The stats are appended automatically to every commit message:
-
-```
-fix: validate user input on login form
-
-─────────────────────────────────────────────
-Authorship (38 lines)
-AI    ██████████████████████████████░░░░░░░░░░  Human
-75%                                             25%
-─────────────────────────────────────────────
-```
-
-You can see it anytime with:
+### Inspecting authorship
 
 ```bash
-git log -1 --format="%B"
+git-ai-show              # detailed view for HEAD
+git-ai-show <sha>        # specific commit
+git-ai-show --log        # last 10 commits with AI line counts
+git-ai-show --log 20     # last 20 commits
+
+# raw note
+git notes --ref=refs/notes/ai show HEAD
 ```
 
-Or browse the full history:
-
-```bash
-git log --format="%s%n%b" | grep -A3 "Authorship"
-```
-
----
-
-## Example scenarios
-
-### 100% AI — Claude wrote everything in this commit
+`git-ai-show` output:
 
 ```
-feat: add JWT authentication middleware
+ Commit  a1b2c3d4e5f6
+ feat: add JWT authentication middleware
+ Schema: authorship/3.0.0
 
-─────────────────────────────────────────────
-Authorship (94 lines)
-AI    ████████████████████████████████████████  Human
-100%                                            0%
-─────────────────────────────────────────────
-```
+ Attestation
+   src/auth/middleware.py
+     a1b2c3d4e5f6abcd  lines 1-180  (180 lines)
+   tests/test_auth.py
+     a1b2c3d4e5f6abcd  lines 1-54   (54 lines)
 
-### 100% Human — you wrote it all
-
-```
-chore: update .gitignore
-
-─────────────────────────────────────────────
-Authorship (3 lines)
-AI    ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  Human
-0%                                              100%
-─────────────────────────────────────────────
-```
-
-### Mixed — Claude scaffolded, you adapted
-
-```
-feat: user profile page
-
-─────────────────────────────────────────────
-Authorship (61 lines)
-AI    ███████████████████████░░░░░░░░░░░░░░░░░  Human
-57%                                             43%
-─────────────────────────────────────────────
+ Sessions
+   a1b2c3d4e5f6abcd
+     tool:    claude-code / claude-sonnet-4-6
+     author:  Your Name <you@example.com>
+     lines:   234 accepted
 ```
 
 ---
@@ -197,41 +134,52 @@ AI    ███████████████████████░�
 
 ```
 .
-├── install-global.sh              # Global installer (recommended)
+├── install-global.sh              # Global installer
 ├── install.sh                     # Per-project installer
+├── docs/
+│   └── git_ai_standard_v3.0.0.md # Reference spec
 ├── scripts/
-│   └── capture-ai-diff.sh         # Claude Stop hook — records AI diffs
+│   ├── post-tool-use.sh           # PostToolUse hook — records line ranges
+│   ├── build-authorship.py        # Builds the Authorship Log at commit time
+│   └── git-ai-show                # CLI to inspect Git Notes
 └── hooks/
-    ├── pre-commit                  # Computes stats, shows terminal bar
-    ├── prepare-commit-msg          # Appends stats to commit message
-    └── post-commit                 # Archives diff, cleans up temp files
+    ├── pre-commit                  # Calls build-authorship.py, prints summary
+    ├── post-commit                 # Attaches Git Note, archives checkpoints
+    └── prepare-commit-msg          # No-op (authorship lives in Git Notes now)
 ```
 
-After installation, the capture script is copied and the hooks are symlinked:
+After installation:
 
 ```
-~/.claude/scripts/capture-ai-diff.sh        # copy
+~/.claude/scripts/post-tool-use.sh      # copy
+~/.claude/scripts/build-authorship.py   # copy
+~/.local/bin/git-ai-show                # copy
 ~/.git-hooks/pre-commit          -> <repo>/hooks/pre-commit
-~/.git-hooks/prepare-commit-msg  -> <repo>/hooks/prepare-commit-msg
 ~/.git-hooks/post-commit         -> <repo>/hooks/post-commit
+~/.git-hooks/prepare-commit-msg  -> <repo>/hooks/prepare-commit-msg
 ```
 
-Per-repo tracking files (git-ignored automatically):
+Per-repo working files (inside `.git/`, never committed):
 
 ```
-<repo>/.claude/ai-changes.diff          # Active session — Claude's diffs
-<repo>/.claude/ai-changes-<ts>.diff.bak # Archived after each commit
-<repo>/.claude/ai-stats.tmp             # Temp file between hooks (deleted post-commit)
+.git/ai/working/<session-hash>.json     # checkpoint per Claude session
+.git/ai/pending.log                     # authorship log waiting to be attached
+.git/ai/archive/<sha>/                  # archived checkpoints after commit
 ```
 
 ---
 
 ## Caveats
 
-- **Accuracy is heuristic.** Lines are matched by content. If you write the same line Claude wrote, it counts as AI. If you modify a line Claude wrote, it counts as Human (which is correct).
-- **Only tracks Claude Code.** The Stop hook is a Claude Code feature. Other AI tools (Copilot, Cursor, etc.) are not captured.
-- **New repos start at 0%.** The tracking file doesn't exist until Claude writes something in that repo after installation.
-- **`git commit` inside Claude's turn shows 0% AI.** If Claude runs `git commit` itself (not you), the Stop hook fires after the commit — too late to track. Always commit yourself.
+- **Only tracks Claude Code** via PostToolUse. Other tools (Copilot, Cursor, etc.) are not captured.
+- **Bash commits are not tracked.** If Claude runs `git commit` itself via the Bash tool, the PostToolUse hook doesn't fire for that commit. Always commit yourself.
+- **No rebase/stash tracking.** Line attribution is only computed for the commit it was created in — rebasing moves the note but doesn't recalculate line numbers.
+
+---
+
+## Format
+
+Authorship Logs follow the [git-ai standard v3.0.0](docs/git_ai_standard_v3.0.0.md) and are stored under `refs/notes/ai`. The format is designed to be compatible with tooling built on that standard.
 
 ---
 
@@ -240,10 +188,11 @@ Per-repo tracking files (git-ignored automatically):
 ```bash
 git config --global --unset core.hooksPath
 rm -rf ~/.git-hooks
-rm ~/.claude/scripts/capture-ai-diff.sh
+rm ~/.claude/scripts/post-tool-use.sh ~/.claude/scripts/build-authorship.py
+rm ~/.local/bin/git-ai-show
 ```
 
-Then remove the Stop hook entry from `~/.claude/settings.json`.
+Remove the `PostToolUse` hook entry from `~/.claude/settings.json`.
 
 ---
 
