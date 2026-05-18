@@ -88,12 +88,26 @@ What it does:
 
 ## What you see
 
-### At commit time
+### At commit time (terminal)
 
 ```
- AI Authorship  94% AI · 6% Human  (234 lines staged)
+ Authorship  (234 lines)
+ AI    ████████████████████████████████████░░░░  Human
+ 94%                                             6%
    src/auth/middleware.py  [1-180]  (180 lines)
    tests/test_auth.py      [1-54]   (54 lines)
+```
+
+### In the commit message (permanent)
+
+```
+feat: add JWT authentication middleware
+
+─────────────────────────────────────────────
+Authorship (234 lines)
+AI    ████████████████████████████████████░░░░  Human
+94%                                             6%
+─────────────────────────────────────────────
 ```
 
 ### Inspecting authorship
@@ -145,7 +159,7 @@ git notes --ref=refs/notes/ai show HEAD
 └── hooks/
     ├── pre-commit                  # Calls build-authorship.py, prints summary
     ├── post-commit                 # Attaches Git Note, archives checkpoints
-    └── prepare-commit-msg          # No-op (authorship lives in Git Notes now)
+    └── prepare-commit-msg          # Appends plain-text bar to commit message
 ```
 
 After installation:
@@ -164,6 +178,7 @@ Per-repo working files (inside `.git/`, never committed):
 ```
 .git/ai/working/<session-hash>.json     # checkpoint per Claude session
 .git/ai/pending.log                     # authorship log waiting to be attached
+.git/ai/stats.tmp                       # bar stats passed to prepare-commit-msg
 .git/ai/archive/<sha>/                  # archived checkpoints after commit
 ```
 
