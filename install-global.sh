@@ -26,7 +26,7 @@ done
 git config --global core.hooksPath "$GIT_HOOKS"
 echo "✓ git config        core.hooksPath = $GIT_HOOKS"
 
-# ── 3. Claude Code global Stop hook ──────────────────────────────────────────
+# ── 3. Claude Code hooks (Stop + PostToolUse) ────────────────────────────────
 CAPTURE_CMD="bash $CLAUDE_SCRIPTS/capture-ai-diff.sh"
 
 if [ ! -f "$GLOBAL_SETTINGS" ]; then
@@ -43,16 +43,31 @@ if [ ! -f "$GLOBAL_SETTINGS" ]; then
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CAPTURE_CMD"
+          }
+        ]
+      }
     ]
   }
 }
 EOF
-    echo "✓ created $GLOBAL_SETTINGS with Stop hook"
+    echo "✓ created $GLOBAL_SETTINGS with Stop + PostToolUse hooks"
 else
     echo ""
-    echo "⚠  $GLOBAL_SETTINGS already exists — add this entry to your Stop hooks array:"
+    echo "⚠  $GLOBAL_SETTINGS already exists — add these entries manually:"
     echo ""
-    echo "   {\"type\":\"command\",\"command\":\"$CAPTURE_CMD\"}"
+    echo "  Stop hooks array:"
+    echo "    {\"type\":\"command\",\"command\":\"$CAPTURE_CMD\"}"
+    echo ""
+    echo "  PostToolUse hooks array (matcher: \"Edit|Write\"):"
+    echo "    {\"type\":\"command\",\"command\":\"$CAPTURE_CMD\"}"
     echo ""
 fi
 

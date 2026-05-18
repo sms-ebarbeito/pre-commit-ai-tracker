@@ -10,13 +10,12 @@ Works **globally** — install once and every git repository on your machine get
 ## How it works
 
 ```
-Claude writes code
+Claude writes code (Edit / Write tools)
       │
-      ▼
-Claude stops (end of turn)
+      ▼  [PostToolUse hook fires after each Edit/Write]
+.claude/ai-changes.diff  ◄── Claude's diff is appended incrementally
       │
-      ▼  [Stop hook fires]
-.claude/ai-changes.diff  ◄── Claude's diff is appended here
+      │  [Stop hook also fires at end of turn — catches anything missed]
       │
       ▼
 You review, then: git commit -m "..."
@@ -36,7 +35,9 @@ You review, then: git commit -m "..."
            Cleans up .claude/ai-stats.tmp
 ```
 
-The key insight: Claude Code fires a **Stop hook** after every response. That hook captures `git diff` (modified files), `git diff --cached` (staged files), and new untracked files — so every line Claude touches is recorded before you commit.
+Two capture points ensure accurate tracking:
+- **PostToolUse** fires immediately after each `Edit` or `Write` tool call — so the diff is recorded even if you commit during the same Claude turn.
+- **Stop** fires at the end of every Claude turn as a fallback (catches files written via Bash, etc.).
 
 ---
 
@@ -77,25 +78,27 @@ What it does:
 
 ---
 
-## Manual Stop hook setup
+## Manual hook setup
 
-If you already have a `~/.claude/settings.json`, add this entry inside the `Stop` array:
-
-```json
-{
-  "type": "command",
-  "command": "bash /Users/YOU/.claude/scripts/capture-ai-diff.sh"
-}
-```
-
-Full example:
+If you already have a `~/.claude/settings.json`, add both entries:
 
 ```json
 {
   "hooks": {
     "Stop": [
       {
-        "matcher": "*",
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/YOU/.claude/scripts/capture-ai-diff.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
