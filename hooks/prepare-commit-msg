@@ -1,5 +1,31 @@
 #!/usr/bin/env bash
-# Authorship is now stored as a Git Note (refs/notes/ai), not in the commit message.
-# Use: git notes --ref=refs/notes/ai show <commit>
-#  or: git-ai-show <commit>
+# Appends the AI authorship bar to the commit message.
+# Reads stats from .git/ai/stats.tmp written by pre-commit (via build-authorship.py).
+
+COMMIT_MSG_FILE="$1"
+COMMIT_SOURCE="${2:-}"
+
+[ "$COMMIT_SOURCE" = "merge" ]  && exit 0
+[ "$COMMIT_SOURCE" = "squash" ] && exit 0
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+STATS_FILE="$REPO_ROOT/.git/ai/stats.tmp"
+
+[ -f "$STATS_FILE" ] || exit 0
+
+# shellcheck source=/dev/null
+source "$STATS_FILE"
+
+PCT_LINE=$(printf "%-48s%s" "${AI_PCT}%" "${HUMAN_PCT}%")
+
+cat >> "$COMMIT_MSG_FILE" <<EOF
+
+
+─────────────────────────────────────────────
+Authorship ($TOTAL_LINES lines)
+AI    ${AI_BAR}${HUMAN_BAR}  Human
+${PCT_LINE}
+─────────────────────────────────────────────
+EOF
+
 exit 0

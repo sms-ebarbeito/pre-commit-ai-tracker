@@ -7,12 +7,14 @@ set -euo pipefail
 REPO_ROOT=$(git rev-parse --show-toplevel)
 AI_DIR="$REPO_ROOT/.git/ai"
 PENDING_LOG="$AI_DIR/pending.log"
+STATS_FILE="$AI_DIR/stats.tmp"
 WORKING_DIR="$AI_DIR/working"
 
 if [ -f "$PENDING_LOG" ]; then
     git notes --ref=refs/notes/ai add -f -F "$PENDING_LOG" HEAD 2>/dev/null || true
     rm -f "$PENDING_LOG"
 fi
+rm -f "$STATS_FILE"
 
 # Archive session checkpoints under the commit SHA
 if [ -d "$WORKING_DIR" ] && compgen -G "$WORKING_DIR/*.json" > /dev/null 2>&1; then

@@ -189,7 +189,7 @@ log = attestation_section + "\n---\n" + json.dumps(metadata, indent=2)
 with open(pending_log, "w") as f:
     f.write(log)
 
-# ── Terminal summary ──────────────────────────────────────────────────────────
+# ── Terminal summary + bar ────────────────────────────────────────────────────
 total_ai_lines = sum(
     e - s + 1
     for session_map in attestation.values()
@@ -200,10 +200,33 @@ total_staged_lines = sum(e - s + 1 for ranges in staged_files.values() for s, e 
 ai_pct = int(total_ai_lines * 100 / total_staged_lines) if total_staged_lines else 0
 human_pct = 100 - ai_pct
 
+BAR_WIDTH = 40
+ai_filled    = (ai_pct * BAR_WIDTH) // 100
+human_filled = BAR_WIDTH - ai_filled
+ai_bar    = "█" * ai_filled
+human_bar = "░" * human_filled
+
+RESET  = "\033[0m"
+BOLD   = "\033[1m"
+CYAN   = "\033[36m"
+YELLOW = "\033[33m"
+DIM    = "\033[2m"
+
 print("")
-print(f" AI Authorship  {ai_pct}% AI · {human_pct}% Human  ({total_staged_lines} lines staged)")
+print(f" {BOLD}Authorship{RESET}  ({DIM}{total_staged_lines} lines{RESET})")
+print(f" {CYAN}AI   {RESET} {CYAN}{ai_bar}{RESET}{DIM}{human_bar}{RESET}  {YELLOW}Human{RESET}")
+print(f" {CYAN}{BOLD}{ai_pct}%{RESET:<47}{YELLOW}{BOLD}{human_pct}%{RESET}")
 for filepath in sorted(attestation):
     ranges = merge_ranges([r for rm in attestation[filepath].values() for r in rm])
     n = sum(e - s + 1 for s, e in ranges)
-    print(f"   {filepath}  [{ranges_to_str(ranges)}]  ({n} lines)")
+    print(f"   {DIM}{filepath}  [{ranges_to_str(ranges)}]  ({n} lines){RESET}")
 print("")
+
+# Save plain-text stats for prepare-commit-msg
+stats_file = os.path.join(repo_root, ".git", "ai", "stats.tmp")
+with open(stats_file, "w") as f:
+    f.write(f"AI_PCT={ai_pct}\n")
+    f.write(f"HUMAN_PCT={human_pct}\n")
+    f.write(f"TOTAL_LINES={total_staged_lines}\n")
+    f.write(f"AI_BAR={ai_bar}\n")
+    f.write(f"HUMAN_BAR={human_bar}\n")
