@@ -16,15 +16,13 @@ STATS_FILE="$REPO_ROOT/.git/ai/stats.tmp"
 # shellcheck source=/dev/null
 source "$STATS_FILE"
 
-PCT_LINE=$(printf "%-48s%s" "${AI_PCT}%" "${HUMAN_PCT}%")
-
 cat >> "$COMMIT_MSG_FILE" <<EOF
 
 
 ─────────────────────────────────────────────
-Authorship ($TOTAL_LINES lines)
-AI    ${AI_BAR}${HUMAN_BAR}  Human
-${PCT_LINE}
+Authorship ($ADDED_LINES added, $DELETED_LINES removed)
+${AI_BAR}${HUMAN_BAR}${UNATTRIBUTED_BAR}
+AI ${AI_PCT}%   Human ${HUMAN_PCT}%   Unattributed ${UNATTRIBUTED_PCT}%
 ─────────────────────────────────────────────
 EOF
 

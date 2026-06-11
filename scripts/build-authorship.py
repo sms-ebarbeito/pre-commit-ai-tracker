@@ -86,17 +86,20 @@ staged_out = subprocess.run(
 
 staged_files = {}
 current_file = None
+total_deleted_lines = 0
 for line in staged_out.splitlines():
     if line.startswith("+++ b/"):
         current_file = line[6:]
         staged_files[current_file] = []
     elif line.startswith("@@ ") and current_file:
-        m = re.match(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", line)
+        m = re.match(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", line)
         if m:
-            start = int(m.group(1))
-            count = int(m.group(2)) if m.group(2) is not None else 1
-            if count > 0:
-                staged_files[current_file].append((start, start + count - 1))
+            del_count = int(m.group(2)) if m.group(2) is not None else 1
+            add_start = int(m.group(3))
+            add_count = int(m.group(4)) if m.group(4) is not None else 1
+            if add_count > 0:
+                staged_files[current_file].append((add_start, add_start + add_count - 1))
+            total_deleted_lines += del_count
 
 # Build attestation: {rel_path: {session_hash: [(start, end)]}}
 # A staged file is AI-attributed if it appears in any session's checkpoint.
@@ -196,15 +199,27 @@ total_ai_lines = sum(
     for ranges in session_map.values()
     for s, e in ranges
 )
-total_staged_lines = sum(e - s + 1 for ranges in staged_files.values() for s, e in ranges)
-ai_pct = int(total_ai_lines * 100 / total_staged_lines) if total_staged_lines else 0
-human_pct = 100 - ai_pct
+total_added_lines = sum(e - s + 1 for ranges in staged_files.values() for s, e in ranges)
+total_human_lines = max(total_added_lines - total_ai_lines, 0)
+total_lines = total_added_lines + total_deleted_lines
+
+# Unattributed = deleted lines, which were neither typed by AI nor by the human
+# in this commit (they're just gone). Without this bucket they'd silently
+# inflate the "Human" share.
+if total_lines:
+    ai_pct = int(total_ai_lines * 100 / total_lines)
+    human_pct = int(total_human_lines * 100 / total_lines)
+    unattributed_pct = 100 - ai_pct - human_pct
+else:
+    ai_pct = human_pct = unattributed_pct = 0
 
 BAR_WIDTH = 40
-ai_filled    = (ai_pct * BAR_WIDTH) // 100
-human_filled = BAR_WIDTH - ai_filled
-ai_bar    = "█" * ai_filled
-human_bar = "░" * human_filled
+ai_filled = (ai_pct * BAR_WIDTH) // 100
+human_filled = (human_pct * BAR_WIDTH) // 100
+unattributed_filled = BAR_WIDTH - ai_filled - human_filled
+ai_bar = "█" * ai_filled
+human_bar = "▓" * human_filled
+unattributed_bar = "░" * unattributed_filled
 
 RESET  = "\033[0m"
 BOLD   = "\033[1m"
@@ -213,9 +228,9 @@ YELLOW = "\033[33m"
 DIM    = "\033[2m"
 
 print("")
-print(f" {BOLD}Authorship{RESET}  ({DIM}{total_staged_lines} lines{RESET})")
-print(f" {CYAN}AI   {RESET} {CYAN}{ai_bar}{RESET}{DIM}{human_bar}{RESET}  {YELLOW}Human{RESET}")
-print(f" {CYAN}{BOLD}{ai_pct}%{RESET:<47}{YELLOW}{BOLD}{human_pct}%{RESET}")
+print(f" {BOLD}Authorship{RESET}  ({DIM}{total_added_lines} added, {total_deleted_lines} removed{RESET})")
+print(f" {CYAN}{ai_bar}{RESET}{YELLOW}{human_bar}{RESET}{DIM}{unattributed_bar}{RESET}")
+print(f" {CYAN}{BOLD}AI {ai_pct}%{RESET}   {YELLOW}{BOLD}Human {human_pct}%{RESET}   {DIM}{BOLD}Unattributed {unattributed_pct}%{RESET}")
 for filepath in sorted(attestation):
     ranges = merge_ranges([r for rm in attestation[filepath].values() for r in rm])
     n = sum(e - s + 1 for s, e in ranges)
@@ -227,6 +242,10 @@ stats_file = os.path.join(repo_root, ".git", "ai", "stats.tmp")
 with open(stats_file, "w") as f:
     f.write(f"AI_PCT={ai_pct}\n")
     f.write(f"HUMAN_PCT={human_pct}\n")
-    f.write(f"TOTAL_LINES={total_staged_lines}\n")
+    f.write(f"UNATTRIBUTED_PCT={unattributed_pct}\n")
+    f.write(f"TOTAL_LINES={total_lines}\n")
+    f.write(f"ADDED_LINES={total_added_lines}\n")
+    f.write(f"DELETED_LINES={total_deleted_lines}\n")
     f.write(f"AI_BAR={ai_bar}\n")
     f.write(f"HUMAN_BAR={human_bar}\n")
+    f.write(f"UNATTRIBUTED_BAR={unattributed_bar}\n")

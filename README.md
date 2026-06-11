@@ -91,12 +91,16 @@ What it does:
 ### At commit time (terminal)
 
 ```
- Authorship  (234 lines)
- AI    ████████████████████████████████████░░░░  Human
- 94%                                             6%
+ Authorship  (234 added, 12 removed)
+ ████████████████████████████████████▓▓░░
+ AI 88%   Human 8%   Unattributed 4%
    src/auth/middleware.py  [1-180]  (180 lines)
    tests/test_auth.py      [1-54]   (54 lines)
 ```
+
+`Unattributed` covers lines that disappeared from the diff (deletions, moved
+code) — they aren't AI- or human-*written* in this commit, so they're no
+longer silently folded into the `Human` share.
 
 ### In the commit message (permanent)
 
@@ -104,9 +108,9 @@ What it does:
 feat: add JWT authentication middleware
 
 ─────────────────────────────────────────────
-Authorship (234 lines)
-AI    ████████████████████████████████████░░░░  Human
-94%                                             6%
+Authorship (234 added, 12 removed)
+████████████████████████████████████▓▓░░
+AI 88%   Human 8%   Unattributed 4%
 ─────────────────────────────────────────────
 ```
 
