@@ -193,11 +193,13 @@ with open(pending_log, "w") as f:
     f.write(log)
 
 # ── Terminal summary + bar ────────────────────────────────────────────────────
+# Union ranges across sessions per file before counting, so overlapping
+# attributions (e.g. multiple sessions falling back to the same staged
+# range) aren't double-counted.
 total_ai_lines = sum(
     e - s + 1
     for session_map in attestation.values()
-    for ranges in session_map.values()
-    for s, e in ranges
+    for s, e in merge_ranges([r for ranges in session_map.values() for r in ranges])
 )
 total_added_lines = sum(e - s + 1 for ranges in staged_files.values() for s, e in ranges)
 total_human_lines = max(total_added_lines - total_ai_lines, 0)
