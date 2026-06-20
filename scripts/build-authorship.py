@@ -225,7 +225,7 @@ unattributed_bar = "░" * unattributed_filled
 
 RESET  = "\033[0m"
 BOLD   = "\033[1m"
-ORANGE = "\033[38;5;208m"
+ORANGE = "\033[38;5;173m"
 YELLOW = "\033[33m"
 DIM    = "\033[2m"
 
