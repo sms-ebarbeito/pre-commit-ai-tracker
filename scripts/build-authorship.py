@@ -225,14 +225,14 @@ unattributed_bar = "░" * unattributed_filled
 
 RESET  = "\033[0m"
 BOLD   = "\033[1m"
-CYAN   = "\033[36m"
+ORANGE = "\033[38;5;208m"
 YELLOW = "\033[33m"
 DIM    = "\033[2m"
 
 print("")
 print(f" {BOLD}Authorship{RESET}  ({DIM}{total_added_lines} added, {total_deleted_lines} removed{RESET})")
-print(f" {CYAN}{ai_bar}{RESET}{YELLOW}{human_bar}{RESET}{DIM}{unattributed_bar}{RESET}")
-print(f" {CYAN}{BOLD}AI {ai_pct}%{RESET}   {YELLOW}{BOLD}Human {human_pct}%{RESET}   {DIM}{BOLD}Unattributed {unattributed_pct}%{RESET}")
+print(f" {ORANGE}{ai_bar}{RESET}{YELLOW}{human_bar}{RESET}{DIM}{unattributed_bar}{RESET}")
+print(f" {ORANGE}{BOLD}AI {ai_pct}%{RESET}   {YELLOW}{BOLD}Human {human_pct}%{RESET}   {DIM}{BOLD}Unattributed {unattributed_pct}%{RESET}")
 for filepath in sorted(attestation):
     ranges = merge_ranges([r for rm in attestation[filepath].values() for r in rm])
     n = sum(e - s + 1 for s, e in ranges)
